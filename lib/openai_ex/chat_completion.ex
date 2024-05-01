@@ -79,6 +79,8 @@ defmodule OpenaiEx.ChatCompletion do
 
   - `openai`: The OpenAI configuration.
   - `chat_completion`: The chat completion request, as a map with keys corresponding to the API fields.
+  - `opts`:
+     - `{:stream, boolean()}` - whether to use a stream (Server-Sent Events) or a normal HTTP request
 
   ## Returns
 

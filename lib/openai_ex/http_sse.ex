@@ -25,9 +25,10 @@ defmodule OpenaiEx.HttpSse do
 
     status = receive(do: ({:chunk, {:status, status}, ^ref} -> status))
     headers = receive(do: ({:chunk, {:headers, headers}, ^ref} -> headers))
+    timeout = Map.get(openai, :stream_timeout, :infinity)
 
     body_stream =
-      Stream.resource(fn -> {"", ref, task} end, &next_sse/1, fn {_data, _ref, task} ->
+      Stream.resource(fn -> {"", ref, task, timeout} end, &next_sse/1, fn {_data, _ref, task, _} ->
         Task.shutdown(task)
       end)
 
@@ -53,22 +54,31 @@ defmodule OpenaiEx.HttpSse do
   end
 
   @doc false
-  defp next_sse({acc, ref, task}) do
+  defp next_sse({acc, ref, task, timeout}) do
     receive do
       {:chunk, {:data, evt_data}, ^ref} ->
         {tokens, next_acc} = tokenize_data(evt_data, acc)
-        {[tokens], {next_acc, ref, task}}
+        {[tokens], {next_acc, ref, task, timeout}}
 
       {:done, ^ref} when acc == "data: [DONE]" ->
-        {:halt, {acc, ref, task}}
-      
+        {:halt, {acc, ref, task, timeout}}
+
       {:done, ^ref} ->
-        if acc != "", do: Logger.warning(%{message: "Unexpected value in sse 'acc' after ':done' event received", value: acc})
-        {:halt, {acc, ref, task}}
+        if acc != "",
+          do:
+            Logger.warning(%{
+              message: "Unexpected value in sse 'acc' after ':done' event received",
+              value: acc
+            })
+
+        {:halt, {acc, ref, task, timeout}}
 
       {:canceled, ^ref} ->
         Logger.info("Request canceled by user")
-        {:halt, {acc, ref, task}}
+        {:halt, {acc, ref, task, timeout}}
+    after
+      timeout ->
+        exit({:timeout, timeout})
     end
   end
 
