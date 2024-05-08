@@ -37,23 +37,7 @@ defmodule OpenaiEx.HttpSse do
         end
       end)
 
-    receive do
-      {:error, reason, ^ref} ->
-        raise reason
-    after
-      connect_timeout ->
-        status = receive(do: ({:chunk, {:status, status}, ^ref} -> status))
-        headers = receive(do: ({:chunk, {:headers, headers}, ^ref} -> headers))
-        timeout = Map.get(openai, :stream_timeout, :infinity)
-
-        body_stream =
-          Stream.resource(fn -> {"", ref, task, timeout} end, &next_sse/1, fn {_data, _ref, task,
-                                                                               _} ->
-            Task.shutdown(task)
-          end)
-
-        %{task_pid: task.pid, status: status, headers: headers, body_stream: body_stream}
-    end
+    receive_response(openai, task, ref, connect_timeout, %{task_pid: task.pid})
   end
 
   @doc false
@@ -71,6 +55,35 @@ defmodule OpenaiEx.HttpSse do
       after
         0 -> send(me, {:chunk, chunk, ref})
       end
+    end
+  end
+
+  defp receive_response(openai, task, ref, timeout, acc) do
+    receive do
+      {:error, reason, ^ref} ->
+        Task.shutdown(task)
+        raise reason
+
+      {:chunk, {:status, status}, ^ref} ->
+        receive_response(openai, task, ref, timeout, Map.put(acc, :status, status))
+
+      {:chunk, {:headers, headers}, ^ref} ->
+        stream_timeout = Map.get(openai, :stream_timeout, :infinity)
+
+        body_stream =
+          Stream.resource(
+            fn -> {"", ref, task, stream_timeout} end,
+            &next_sse/1,
+            fn {_data, _ref, task, _} -> Task.shutdown(task) end
+          )
+
+        acc
+        |> Map.put(:headers, headers)
+        |> Map.put(:body_stream, body_stream)
+    after
+      timeout ->
+        Task.shutdown(task)
+        throw(:connect_timeout)
     end
   end
 
