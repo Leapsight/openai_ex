@@ -17,10 +17,23 @@ defmodule OpenaiEx.HttpSse do
       Task.async(fn ->
         on_chunk = create_chunk_handler(me, ref)
 
-        request
-        |> Finch.stream(Map.get(openai, :finch_name), nil, on_chunk, Http.request_options(openai))
+        result =
+          request
+          |> Finch.stream(
+            Map.get(openai, :finch_name),
+            nil,
+            on_chunk,
+            Http.request_options(openai)
+          )
 
-        send(me, {:done, ref})
+        case result do
+          {:ok, _} ->
+            send(me, {:done, ref})
+
+          {:error, _} = error ->
+            # A connection error
+            exit(error)
+        end
       end)
 
     status = receive(do: ({:chunk, {:status, status}, ^ref} -> status))
