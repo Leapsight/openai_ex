@@ -69,6 +69,7 @@ defmodule OpenaiEx.HttpSse do
 
       {:chunk, {:headers, headers}, ^ref} ->
         stream_timeout = Map.get(openai, :stream_timeout, :infinity)
+        :timer.apply_after(3000, __MODULE__, :cancel_request, [task.pid])
 
         body_stream =
           Stream.resource(
@@ -96,7 +97,6 @@ defmodule OpenaiEx.HttpSse do
     receive do
       {:chunk, {:data, evt_data}, ^ref} ->
         {tokens, next_acc} = tokenize_data(evt_data, acc)
-        Logger.info(%{tokens: tokens})
         {[tokens], {next_acc, ref, task, timeout}}
 
       {:canceled, ^ref} ->
