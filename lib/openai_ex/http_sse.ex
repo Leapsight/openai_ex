@@ -37,7 +37,12 @@ defmodule OpenaiEx.HttpSse do
         end
       end)
 
-    receive_response(openai, task, ref, connect_timeout, %{task_pid: task.pid})
+    try do
+      await_response(openai, task, ref, connect_timeout, %{task_pid: task.pid})
+    catch
+      :throw, _ ->
+        :ok
+    end
   end
 
   @doc false
@@ -58,14 +63,14 @@ defmodule OpenaiEx.HttpSse do
     end
   end
 
-  defp receive_response(openai, task, ref, timeout, acc) do
+  defp await_response(openai, task, ref, timeout, acc) do
     receive do
       {:error, reason, ^ref} ->
         Task.shutdown(task)
         raise reason
 
       {:chunk, {:status, status}, ^ref} ->
-        receive_response(openai, task, ref, timeout, Map.put(acc, :status, status))
+        await_response(openai, task, ref, timeout, Map.put(acc, :status, status))
 
       {:chunk, {:headers, headers}, ^ref} ->
         stream_timeout = Map.get(openai, :stream_timeout, :infinity)
