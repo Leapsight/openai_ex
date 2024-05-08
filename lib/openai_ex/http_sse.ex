@@ -110,9 +110,6 @@ defmodule OpenaiEx.HttpSse do
       {:canceled, ^ref} ->
         Logger.info("Request canceled by user")
         {:halt, {acc, ref, task, timeout}}
-
-      other ->
-        Logger.warning(%{msg: other})
     after
       timeout ->
         exit({:timeout, timeout})
