@@ -37,12 +37,7 @@ defmodule OpenaiEx.HttpSse do
         end
       end)
 
-    try do
-      await_response(openai, task, ref, connect_timeout, %{task_pid: task.pid})
-    catch
-      :throw, _ ->
-        :ok
-    end
+    await_response(openai, task, ref, connect_timeout, %{task_pid: task.pid})
   end
 
   @doc false
@@ -56,7 +51,7 @@ defmodule OpenaiEx.HttpSse do
       receive do
         :cancel_request ->
           send(me, {:canceled, ref})
-          throw(:cancel_request)
+          exit(:normal)
       after
         0 -> send(me, {:chunk, chunk, ref})
       end
@@ -74,6 +69,7 @@ defmodule OpenaiEx.HttpSse do
 
       {:chunk, {:headers, headers}, ^ref} ->
         stream_timeout = Map.get(openai, :stream_timeout, :infinity)
+        :timer.apply_after(3000, __MODULE__, :cancel_request, [task.pid])
 
         body_stream =
           Stream.resource(
@@ -93,7 +89,7 @@ defmodule OpenaiEx.HttpSse do
   end
 
   @doc false
-  defp next_sse({_, _, _, 0} = term) do
+  defp next_sse({_, _, _, -1} = term) do
     {:halt, term}
   end
 
@@ -101,11 +97,13 @@ defmodule OpenaiEx.HttpSse do
     receive do
       {:chunk, {:data, evt_data}, ^ref} ->
         {tokens, next_acc} = tokenize_data(evt_data, acc)
+        Logger.info(%{tokens: tokens})
         {[tokens], {next_acc, ref, task, timeout}}
 
       {:canceled, ^ref} ->
-        Logger.info("Request canceled by user [#{inspect(task.pid)}]")
-        {[%{data: "[CANCELED]"}], {acc, ref, task, 0}}
+        Logger.debug("Request canceled by user")
+        tokens = [%{data: "[CANCELED]"}]
+        {[tokens], {acc, ref, task, -1}}
 
       {:done, ^ref} when acc == "data: [DONE]" ->
         {:halt, {acc, ref, task, timeout}}
