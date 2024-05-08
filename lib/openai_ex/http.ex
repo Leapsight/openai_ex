@@ -7,7 +7,7 @@ defmodule OpenaiEx.Http do
   end
 
   def request_options(openai = %OpenaiEx{}) do
-    [receive_timeout: openai |> Map.get(:receive_timeout)]
+    Map.take(openai, [:request_timeout, :receive_timeout]) |> Map.to_list()
   end
 
   def build_finch(method, openai = %OpenaiEx{}, url) do
