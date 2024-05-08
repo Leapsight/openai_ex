@@ -11,6 +11,7 @@ defmodule OpenaiEx do
             organization: nil,
             beta: nil,
             base_url: "https://api.openai.com/v1",
+            connect_timeout: 8_000,
             receive_timeout: 15_000,
             request_timeout: :infinity,
             stream_timeout: :infinity,
@@ -110,6 +111,10 @@ defmodule OpenaiEx do
 
   def with_base_url(openai = %OpenaiEx{}, base_url) do
     openai |> Map.put(:base_url, base_url)
+  end
+
+  def with_connect_timeout(openai = %OpenaiEx{}, connect_timeout) do
+    openai |> Map.put(:connect_timeout, connect_timeout)
   end
 
   def with_receive_timeout(openai = %OpenaiEx{}, receive_timeout) do

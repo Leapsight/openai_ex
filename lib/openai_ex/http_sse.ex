@@ -9,7 +9,8 @@ defmodule OpenaiEx.HttpSse do
   @doc false
   def post(openai = %OpenaiEx{}, url, json: json) do
     request = OpenaiEx.Http.build_post(openai, url, json: json)
-
+    http_opts = Http.request_options(openai)
+    connect_timeout = Keyword.get(http_opts, :connect_timeout, 8_000)
     me = self()
     ref = make_ref()
 
@@ -23,29 +24,36 @@ defmodule OpenaiEx.HttpSse do
             Map.get(openai, :finch_name),
             nil,
             on_chunk,
-            Http.request_options(openai)
+            http_opts
           )
 
         case result do
           {:ok, _} ->
             send(me, {:done, ref})
 
-          {:error, _} = error ->
+          {:error, reason} ->
             # A connection error
-            exit(error)
+            send(me, {:error, reason, ref})
         end
       end)
 
-    status = receive(do: ({:chunk, {:status, status}, ^ref} -> status))
-    headers = receive(do: ({:chunk, {:headers, headers}, ^ref} -> headers))
-    timeout = Map.get(openai, :stream_timeout, :infinity)
+    receive do
+      {:error, reason, ^ref} ->
+        raise reason
+    after
+      connect_timeout ->
+        status = receive(do: ({:chunk, {:status, status}, ^ref} -> status))
+        headers = receive(do: ({:chunk, {:headers, headers}, ^ref} -> headers))
+        timeout = Map.get(openai, :stream_timeout, :infinity)
 
-    body_stream =
-      Stream.resource(fn -> {"", ref, task, timeout} end, &next_sse/1, fn {_data, _ref, task, _} ->
-        Task.shutdown(task)
-      end)
+        body_stream =
+          Stream.resource(fn -> {"", ref, task, timeout} end, &next_sse/1, fn {_data, _ref, task,
+                                                                               _} ->
+            Task.shutdown(task)
+          end)
 
-    %{task_pid: task.pid, status: status, headers: headers, body_stream: body_stream}
+        %{task_pid: task.pid, status: status, headers: headers, body_stream: body_stream}
+    end
   end
 
   @doc false
@@ -89,6 +97,9 @@ defmodule OpenaiEx.HttpSse do
       {:canceled, ^ref} ->
         Logger.info("Request canceled by user")
         {:halt, {acc, ref, task, timeout}}
+
+      other ->
+        Logger.warning(%{msg: other})
     after
       timeout ->
         exit({:timeout, timeout})
