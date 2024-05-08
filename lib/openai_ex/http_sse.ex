@@ -88,11 +88,19 @@ defmodule OpenaiEx.HttpSse do
   end
 
   @doc false
+  defp next_sse({_, _, _, 0} = term) do
+    {:halt, term}
+  end
+
   defp next_sse({acc, ref, task, timeout}) do
     receive do
       {:chunk, {:data, evt_data}, ^ref} ->
         {tokens, next_acc} = tokenize_data(evt_data, acc)
         {[tokens], {next_acc, ref, task, timeout}}
+
+      {:canceled, ^ref} ->
+        Logger.info("Request canceled by user [#{inspect(task.pid)}]")
+        {[%{data: "[CANCELED]"}], {acc, ref, task, 0}}
 
       {:done, ^ref} when acc == "data: [DONE]" ->
         {:halt, {acc, ref, task, timeout}}
@@ -105,10 +113,6 @@ defmodule OpenaiEx.HttpSse do
               value: acc
             })
 
-        {:halt, {acc, ref, task, timeout}}
-
-      {:canceled, ^ref} ->
-        Logger.info("Request canceled by user")
         {:halt, {acc, ref, task, timeout}}
     after
       timeout ->
@@ -129,12 +133,12 @@ defmodule OpenaiEx.HttpSse do
         token_chunks
         |> Enum.map(&extract_token/1)
         |> Enum.filter(fn
-          %{data: "[DONE]"} -> false
+          %{data: "[DONE]"} -> true
+          %{data: "[CANCELED]"} -> true
           %{data: _} -> true
           # we can pass other events through but the clients will need to be rewritten
           _ -> false
         end)
-        |> Enum.map(fn %{data: data} -> %{data: Jason.decode!(data)} end)
 
       {tokens, remaining}
     else
@@ -147,7 +151,7 @@ defmodule OpenaiEx.HttpSse do
     value = Enum.join(rest, "") |> String.replace_prefix(" ", "")
 
     case field do
-      "data" -> %{data: value}
+      "data" -> %{data: Jason.decode!(value)}
       "event" -> %{eventType: value}
       "id" -> %{lastEventId: value}
       "retry" -> %{retry: value}
