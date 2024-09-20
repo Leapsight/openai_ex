@@ -152,7 +152,7 @@ defmodule OpenaiEx.HttpSse do
     value = Enum.join(rest, "") |> String.replace_prefix(" ", "")
 
     case field do
-      "data" -> %{data: Jason.decode!(value)}
+      "data" -> %{data: maybe_decode(value)}
       "event" -> %{eventType: value}
       "id" -> %{lastEventId: value}
       "retry" -> %{retry: value}
@@ -160,4 +160,9 @@ defmodule OpenaiEx.HttpSse do
       _ -> nil
     end
   end
+
+  defp maybe_decode("[DATA]" = value), do: value
+  defp maybe_decode("[CANCELED]" = value), do: value
+  defp maybe_decode("[CANCELLED]" = value), do: value
+  defp maybe_decode(value), do: Jason.decode!(value)
 end
