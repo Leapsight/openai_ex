@@ -161,7 +161,7 @@ defmodule OpenaiEx.HttpSse do
     end
   end
 
-  defp maybe_decode("[DATA]" = value), do: value
+  defp maybe_decode("[DONE]" = value), do: value
   defp maybe_decode("[CANCELED]" = value), do: value
   defp maybe_decode("[CANCELLED]" = value), do: value
   defp maybe_decode(value), do: Jason.decode!(value)
